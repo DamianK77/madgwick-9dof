@@ -1,4 +1,4 @@
-# _Madgwick filter for 9 dof MPU6050 + HMC5883l
+# Madgwick filter for 9 dof MPU6050 + HMC5883l
 
 This is an ESP-IDF project for ESP32-S3 (and similar) which reads the 9dof data from sensors and then interprets them via a Madgwick filter. The purpose of this program is to test and experiment with the Madgwick filter for the purposes of a masters thesis.
 
