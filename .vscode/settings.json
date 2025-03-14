@@ -11,5 +11,8 @@
         "OPENOCD_SCRIPTS": "/home/damian/.espressif/tools/openocd-esp32/v0.12.0-esp32-20230921/openocd-esp32/share/openocd/scripts",
         "ESP_ROM_ELF_DIR": "/home/damian/.espressif/tools/esp-rom-elfs/20230320/",
         "IDF_TARGET": "esp32s3"
+    },
+    "files.associations": {
+        "i2c_master.h": "c"
     }
 }
