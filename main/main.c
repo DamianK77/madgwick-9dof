@@ -317,7 +317,7 @@ void app_main(void)
         // print data for teleplot
         // printf(">gx:%.2f\n>gy:%.2f\n>gz:%.2f\n>ax:%.2f\n>ay:%.2f\n>az:%.2f\n>mx:%.2f\n>my:%.2f\n>mz:%.2f\n", gx, gy, gz, ax, ay, az, mx, my, mz);
         // wait
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // vTaskDelay(10 / portTICK_PERIOD_MS);
 
     }
     
