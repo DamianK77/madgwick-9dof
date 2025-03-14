@@ -1,3 +1,6 @@
 [submodule "components/esp_mpu6050"]
 	path = components/esp_mpu6050
 	url = https://github.com/jango175/esp_mpu6050.git
+[submodule "components/esp_hmc5883l"]
+	path = components/esp_hmc5883l
+	url = https://github.com/jango175/esp_hmc5883l.git
