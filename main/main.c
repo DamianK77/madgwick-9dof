@@ -5,6 +5,7 @@
 #include "freertos/semphr.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_mpu6050.h"
 #include "esp_hmc5883l.h"
 
@@ -13,12 +14,80 @@
 #define I2C_SCL_PIN    GPIO_NUM_9
 #define I2C_FREQ       400000
 
+// values for low pass filter
+#define BETA_A         0.1
+#define BETA_G         0.1
+#define BETA_M         1.0
+
 i2c_master_bus_handle_t bus_handle;
+float x_gyro_offset = 0;
+float y_gyro_offset = 0;
+float z_gyro_offset = 0;
+
+float ax_prev = 0, ay_prev = 0, az_prev = 0; // used by low pass filter
+float gx_prev = 0, gy_prev = 0, gz_prev = 0;
+float mx_prev = 0, my_prev = 0, mz_prev = 0;
 
 static const char* TAG = "main";
 
+// structure type definition for imu config containing mpu6050 and hmc5883l configurations
+typedef struct {
+    mpu6050_conf_t mpu6050_conf;
+    hmc5883l_conf_t hmc5883l_conf;
+} imu_conf_t;
+
 void madgwick(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
     // Madgwick algorithm
+}
+
+void read_imu(imu_conf_t imu_conf, float *gx, float *gy, float *gz, float *ax, float *ay, float *az, float *mx, float *my, float *mz) {
+    float x_gyro, y_gyro, z_gyro;
+    mpu6050_read_gyroscope(imu_conf.mpu6050_conf, &x_gyro, &y_gyro, &z_gyro); // in degrees per second
+    // adjust for offsets
+    x_gyro -= x_gyro_offset;
+    y_gyro -= y_gyro_offset;
+    z_gyro -= z_gyro_offset;
+
+    float x_acc, y_acc, z_acc;
+    mpu6050_read_accelerometer(imu_conf.mpu6050_conf, &x_acc, &y_acc, &z_acc); // in g
+
+    float x_mag, y_mag, z_mag;
+    hmc5883l_read_magnetometer(imu_conf.hmc5883l_conf, &x_mag, &y_mag, &z_mag); // in gauss
+
+    // low pass filter
+    x_acc = BETA_A * x_acc + (1 - BETA_A) * ax_prev;
+    y_acc = BETA_A * y_acc + (1 - BETA_A) * ay_prev;
+    z_acc = BETA_A * z_acc + (1 - BETA_A) * az_prev;
+
+    x_gyro = BETA_G * x_gyro + (1 - BETA_G) * gx_prev;
+    y_gyro = BETA_G * y_gyro + (1 - BETA_G) * gy_prev;
+    z_gyro = BETA_G * z_gyro + (1 - BETA_G) * gz_prev;
+
+    x_mag = BETA_M * x_mag + (1 - BETA_M) * mx_prev;
+    y_mag = BETA_M * y_mag + (1 - BETA_M) * my_prev;
+    z_mag = BETA_M * z_mag + (1 - BETA_M) * mz_prev;
+
+    ax_prev = x_acc;
+    ay_prev = y_acc;
+    az_prev = z_acc;
+
+    gx_prev = x_gyro;
+    gy_prev = y_gyro;
+    gz_prev = z_gyro;
+
+    mx_prev = x_mag;
+    my_prev = y_mag;
+    mz_prev = z_mag;
+
+    *gx = x_gyro;
+    *gy = y_gyro;
+    *gz = z_gyro;
+    *ax = x_acc;
+    *ay = y_acc;
+    *az = z_acc;
+    *mx = x_mag;
+    *my = y_mag;
+    *mz = z_mag;
 }
 
 void app_main(void)
@@ -60,6 +129,11 @@ void app_main(void)
     hmc5883l_write_config(hmc5883l_conf, HMC5883L_OVER_SAMPLE_8, HMC5883L_DATA_OUTPUT_RATE_75_HZ, HMC5883L_MODE_NORMAL, HMC5883L_GAIN_1090);
     hmc5883l_write_mode(hmc5883l_conf, HMC5883L_CONTINUOUS_MODE);
 
+    imu_conf_t imu_conf = {
+        .mpu6050_conf = mpu6050_conf,
+        .hmc5883l_conf = hmc5883l_conf
+    };
+
     // probe sensors
     ESP_ERROR_CHECK(i2c_master_probe(bus_handle, mpu6050_conf.i2c_addr, MPU6050_TIMEOUT_MS));
     ESP_ERROR_CHECK(i2c_master_probe(bus_handle, HMC5883L_ADDR, HMC5883L_TIMEOUT_MS));
@@ -67,9 +141,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Calibrating MPU6050 in 5 seconds, keep the sensor still...");
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     // measure and calculate offsets
-    float x_gyro_offset = 0;
-    float y_gyro_offset = 0;
-    float z_gyro_offset = 0;
     for (int i = 0; i < 100; i++)
     {
         float x_gyro, y_gyro, z_gyro;
@@ -92,22 +163,16 @@ void app_main(void)
     while (true)
     {
         // read data
-        float x_gyro, y_gyro, z_gyro;
-        mpu6050_read_gyroscope(mpu6050_conf, &x_gyro, &y_gyro, &z_gyro); // in degrees per second
-        // adjust for offsets
-        x_gyro -= x_gyro_offset;
-        y_gyro -= y_gyro_offset;
-        z_gyro -= z_gyro_offset;
-        ESP_LOGI(TAG, "Gyroscope: x=%.2f, y=%.2f, z=%.2f", x_gyro, y_gyro, z_gyro);
+        float gx, gy, gz, ax, ay, az, mx, my, mz;
 
-        float x_acc, y_acc, z_acc;
-        mpu6050_read_accelerometer(mpu6050_conf, &x_acc, &y_acc, &z_acc); // in g
-        ESP_LOGI(TAG, "Accelerometer: x=%.2f, y=%.2f, z=%.2f", x_acc, y_acc, z_acc);
+        // measure time taken to read data
+        // uint64_t start_time = esp_timer_get_time();
+        read_imu(imu_conf, &gx, &gy, &gz, &ax, &ay, &az, &mx, &my, &mz);
+        // uint64_t end_time = esp_timer_get_time();
+        // ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time - start_time);
 
-        float x_mag, y_mag, z_mag;
-        hmc5883l_read_magnetometer(hmc5883l_conf, &x_mag, &y_mag, &z_mag); // in gauss
-        ESP_LOGI(TAG, "Magnetometer: x=%.2f, y=%.2f, z=%.2f", x_mag, y_mag, z_mag);
-
+        // print data for teleplot
+        printf(">gx:%.2f\n>gy:%.2f\n>gz:%.2f\n>ax:%.2f\n>ay:%.2f\n>az:%.2f\n>mx:%.2f\n>my:%.2f\n>mz:%.2f\n", gx, gy, gz, ax, ay, az, mx, my, mz);
         // wait
         vTaskDelay(1000 / portTICK_PERIOD_MS);
 
