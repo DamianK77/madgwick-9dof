@@ -12,7 +12,7 @@
 #define I2C_NUM        I2C_NUM_0
 #define I2C_SDA_PIN    GPIO_NUM_3
 #define I2C_SCL_PIN    GPIO_NUM_9
-#define I2C_FREQ       400000
+#define I2C_FREQ       1000000 // 1MHz
 
 // values for low pass filter
 #define BETA_A         0.1
@@ -246,6 +246,8 @@ void app_main(void)
 
     // set the mpu to passthrough mode
     mpu6050_i2c_passthrough(mpu6050_conf);
+    // enable fifo on all sensors
+    // mpu6050_set_fifo_enable(mpu6050_conf, true, true, true, true, true, true);
 
     ESP_LOGI(TAG, "MPU6050 initialized");
 
@@ -298,7 +300,9 @@ void app_main(void)
         // read data
         float gx, gy, gz, ax, ay, az, mx, my, mz;
 
-        // measure time taken to read data
+        // measure time taken for a single measurement
+        uint64_t start_time_performance = esp_timer_get_time();
+
         // uint64_t start_time = esp_timer_get_time();
         read_imu(imu_conf, &gx, &gy, &gz, &ax, &ay, &az, &mx, &my, &mz);
         // uint64_t end_time = esp_timer_get_time();
@@ -308,6 +312,8 @@ void app_main(void)
         float dt = (esp_timer_get_time() - start_time) / 1000000.0f;
         start_time = esp_timer_get_time();
         madgwick(gx, gy, gz, ax, ay, az, mx, my, mz, dt);
+        uint64_t end_time_performance = esp_timer_get_time();
+        ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time_performance - start_time_performance);
 
         // print data
         printf(">Roll:%.2f\n>Pitch:%.2f\n>Yaw:%.2f\n", roll_IMU, pitch_IMU, yaw_IMU);
