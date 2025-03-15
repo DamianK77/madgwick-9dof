@@ -48,15 +48,18 @@ typedef struct {
 } imu_conf_t;
 
 float invSqrt(float x) {
-    float xhalf = 0.5f * x;
-    union {
-        float f;
-        int i;
-    } conv = { .f = x };
-    conv.i = 0x5f3759df - (conv.i >> 1);
-    x = conv.f;
-    x = x * (1.5f - xhalf * x * x);
-    return x;
+    // float xhalf = 0.5f * x;
+    // union {
+    //     float f;
+    //     int i;
+    // } conv = { .f = x };
+    // conv.i = 0x5f3759df - (conv.i >> 1);
+    // x = conv.f;
+    // x = x * (1.5f - xhalf * x * x);
+    // return x;
+
+    // use normal sqrt function
+    return 1.0f / sqrtf(x);
 }
 
 float constrain(float x, float min, float max) {
@@ -303,21 +306,20 @@ void app_main(void)
         // read data
         float gx, gy, gz, ax, ay, az, mx, my, mz;
 
-        // measure time taken for a single measurement
-        uint64_t start_time_performance = esp_timer_get_time();
 
         // uint64_t start_time = esp_timer_get_time();
         read_imu(imu_conf, &gx, &gy, &gz, &ax, &ay, &az, &mx, &my, &mz);
-        uint64_t end_time_performance = esp_timer_get_time();
-        ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time_performance - start_time_performance);
         // uint64_t end_time = esp_timer_get_time();
         // ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time - start_time);
 
         // madgwick filter
+        // measure time taken for a single measurement
+        uint64_t start_time_performance = esp_timer_get_time();
         float dt = (esp_timer_get_time() - start_time) / 1000000.0f;
         start_time = esp_timer_get_time();
         madgwick(gx, gy, gz, ax, ay, az, mx, my, mz, dt);
-
+        uint64_t end_time_performance = esp_timer_get_time();
+        ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time_performance - start_time_performance);
 
         // print data
         printf(">Roll:%.2f\n>Pitch:%.2f\n>Yaw:%.2f\n", roll_IMU, pitch_IMU, yaw_IMU);
