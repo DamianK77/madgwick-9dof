@@ -37,7 +37,10 @@ float roll_IMU = 0.0f;
 float pitch_IMU = 0.0f;
 float yaw_IMU = 0.0f;
 
-const float beta_madgwick = 0.1f;  //Madgwick filter parameter
+static float dt_diag = 0.0f;
+
+// for a 2kHz loop rate it should be 0.04f
+const float beta_madgwick = 0.1f;  //Madgwick filter parameter, higher value -> faster convergence higher noise, lower value -> slower convergence lower noise
 
 static const char* TAG = "main";
 
@@ -58,7 +61,7 @@ float invSqrt(float x) {
     // x = x * (1.5f - xhalf * x * x);
     // return x;
 
-    // use normal sqrt function
+    // use normal sqrt function, as the fpu is fast enough
     return 1.0f / sqrtf(x);
 }
 
@@ -227,6 +230,20 @@ void read_imu(imu_conf_t imu_conf, float *gx, float *gy, float *gz, float *ax, f
     *mz = z_mag;
 }
 
+void imu_task(void *arg) {
+    imu_conf_t *imu_conf = (imu_conf_t *)arg;
+    uint64_t start_time = esp_timer_get_time();
+    while (true) {
+        float gx, gy, gz, ax, ay, az, mx, my, mz;
+        float dt = (esp_timer_get_time() - start_time) / 1000000.0f;
+        start_time = esp_timer_get_time();
+        read_imu(*imu_conf, &gx, &gy, &gz, &ax, &ay, &az, &mx, &my, &mz);
+        madgwick(gx, gy, gz, ax, ay, az, mx, my, mz, dt);
+
+        dt_diag = dt;
+    }
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Initializing I2C master");
@@ -253,7 +270,7 @@ void app_main(void)
     // set the mpu to passthrough mode
     mpu6050_i2c_passthrough(mpu6050_conf);
     // enable fifo on all sensors
-    // mpu6050_set_fifo_enable(mpu6050_conf, true, true, true, true, true, true);
+    mpu6050_set_fifo_enable(mpu6050_conf, false, true, true, true, true, true);
 
     ESP_LOGI(TAG, "MPU6050 initialized");
 
@@ -277,8 +294,8 @@ void app_main(void)
     ESP_ERROR_CHECK(i2c_master_probe(bus_handle, mpu6050_conf.i2c_addr, MPU6050_TIMEOUT_MS));
     ESP_ERROR_CHECK(i2c_master_probe(bus_handle, HMC5883L_ADDR, HMC5883L_TIMEOUT_MS));
 
-    ESP_LOGI(TAG, "Calibrating MPU6050 in 5 seconds, keep the sensor still...");
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    ESP_LOGI(TAG, "Calibrating MPU6050 in 3 seconds, keep the sensor still...");
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
     // measure and calculate offsets
     for (int i = 0; i < 100; i++)
     {
@@ -299,37 +316,18 @@ void app_main(void)
     // vTaskDelay(5000 / portTICK_PERIOD_MS);
     // hmc5883l_calibrate(hmc5883l_conf);
 
-    float start_time = esp_timer_get_time();
+    // create a pinned to core task on core 1 to read data from the sensors and apply the madgwick filter
+    xTaskCreatePinnedToCore(imu_task, "imu_task", 4096, &imu_conf, 5, NULL, 1);
 
     while (true)
     {
-        // read data
-        float gx, gy, gz, ax, ay, az, mx, my, mz;
+        float dt = dt_diag;
 
-
-        // uint64_t start_time = esp_timer_get_time();
-        read_imu(imu_conf, &gx, &gy, &gz, &ax, &ay, &az, &mx, &my, &mz);
-        // uint64_t end_time = esp_timer_get_time();
-        // ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time - start_time);
-
-        // madgwick filter
-        // measure time taken for a single measurement
-        uint64_t start_time_performance = esp_timer_get_time();
-        float dt = (esp_timer_get_time() - start_time) / 1000000.0f;
-        start_time = esp_timer_get_time();
-        madgwick(gx, gy, gz, ax, ay, az, mx, my, mz, dt);
-        uint64_t end_time_performance = esp_timer_get_time();
-        ESP_LOGI(TAG, "Time taken to read data: %llu us", end_time_performance - start_time_performance);
-
-        // print data
+        // log loop rate
+        printf(">Looprate: %.2f Hz\n", 1.0f / dt);
         printf(">Roll:%.2f\n>Pitch:%.2f\n>Yaw:%.2f\n", roll_IMU, pitch_IMU, yaw_IMU);
-
         printf(">3D|mySimpleCube:S:cube:P:1:1:1:R:%.2f:%.2f:%.2f:W:2:H:1:D:2:C:#2ecc71\n", roll_IMU * 0.0174532925f, pitch_IMU * 0.0174532925f, yaw_IMU * 0.0174532925f); // data should be in radian
-
-        // print data for teleplot
-        // printf(">gx:%.2f\n>gy:%.2f\n>gz:%.2f\n>ax:%.2f\n>ay:%.2f\n>az:%.2f\n>mx:%.2f\n>my:%.2f\n>mz:%.2f\n", gx, gy, gz, ax, ay, az, mx, my, mz);
-        // wait
-        // vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(50 / portTICK_PERIOD_MS);
 
     }
     
