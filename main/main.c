@@ -323,7 +323,7 @@ void app_main(void)
     {
         float dt = dt_diag;
 
-        // log loop rate
+        // log loop rate and print roll, pitch, yaw. Also animate a cube in 3D for Teleplot
         printf(">Looprate: %.2f Hz\n", 1.0f / dt);
         printf(">Roll:%.2f\n>Pitch:%.2f\n>Yaw:%.2f\n", roll_IMU, pitch_IMU, yaw_IMU);
         printf(">3D|mySimpleCube:S:cube:P:1:1:1:R:%.2f:%.2f:%.2f:W:2:H:1:D:2:C:#2ecc71\n", roll_IMU * 0.0174532925f, pitch_IMU * 0.0174532925f, yaw_IMU * 0.0174532925f); // data should be in radian
